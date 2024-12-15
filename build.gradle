@@ -1,0 +1,77 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.learning'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+import java.lang.reflect.Modifier
+
+tasks.register('generateTests') {
+    dependsOn 'compileJava'
+
+    doLast {
+        def sourceSet = sourceSets.main
+        def outputDir = sourceSets.test.java.srcDirs.iterator().next()
+        def classLoader = new URLClassLoader(sourceSet.output.classesDirs.collect { new File(it, '').toURI().toURL() } as URL[])
+
+        sourceSet.allJava.srcDirs.each { srcDir ->
+            fileTree(dir: srcDir, include: '**/*.java').each { javaFile ->
+                def className = javaFile.path.replace(srcDir.path + File.separator, '')
+                        .replace(File.separator, '.')
+                        .replace('.java', '')
+
+                try {
+                    def clazz = classLoader.loadClass(className)
+                    def packageName = clazz.package?.name ?: ''
+                    def testClassName = clazz.simpleName + 'Test'
+                    def testFile = new File(outputDir, packageName.replace('.', '/') + '/' + testClassName + '.java')
+
+                    if (!testFile.exists()) {
+                        testFile.parentFile.mkdirs()
+                        testFile.createNewFile()
+
+                        testFile.withWriter { writer ->
+                            writer.write("package $packageName;\n\n")
+                            writer.write("import org.junit.jupiter.api.Test;\n")
+                            writer.write("import static org.junit.jupiter.api.Assertions.*;\n\n")
+                            writer.write("public class $testClassName {\n")
+
+                            clazz.methods.each { method ->
+                                if (Modifier.isPublic(method.modifiers)) {
+                                    writer.write("    @Test\n")
+                                    writer.write("    public void test${method.name.capitalize()}() {\n")
+                                    writer.write("        // TODO: Implement test for ${method.name}\n")
+                                    writer.write("    }\n\n")
+                                }
+                            }
+
+                            writer.write("}\n")
+                        }
+
+                        println "Generated test class: $testFile"
+                    } else {
+                        println "Test class already exists: $testFile"
+                    }
+                } catch (ClassNotFoundException e) {
+                    println "Class not found: $className"
+                } catch (Exception e) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+}
